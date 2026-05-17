@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Autonomous Task & Data Orchestration Dashboard API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: telemetry
+    description: Engine telemetry
+  - name: tasks
+    description: Task queue operations
 paths:
   /healthz:
     get:
@@ -24,6 +28,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /telemetry:
+    get:
+      operationId: getTelemetry
+      tags: [telemetry]
+      summary: Get live engine telemetry snapshot
+      description: Returns current CPU, memory, goroutine and uptime telemetry from the Go engine
+      responses:
+        "200":
+          description: Telemetry snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelemetrySnapshot"
+
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List all tasks
+      responses:
+        "200":
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Dispatch a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /tasks/summary:
+    get:
+      operationId: getTaskSummary
+      tags: [tasks]
+      summary: Get task count summary by status
+      responses:
+        "200":
+          description: Task summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSummary"
+
+  /tasks/{id}:
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Remove a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +113,68 @@ components:
       required:
         - status
 
+    TelemetrySnapshot:
+      type: object
+      required: [cpu_percent, mem_used_mb, mem_total_mb, goroutines, uptime_seconds, throughput_rps, gc_cycles]
+      properties:
+        cpu_percent:
+          type: number
+        mem_used_mb:
+          type: number
+        mem_total_mb:
+          type: number
+        goroutines:
+          type: integer
+        uptime_seconds:
+          type: number
+        throughput_rps:
+          type: number
+        gc_cycles:
+          type: integer
+
+    Task:
+      type: object
+      required: [id, payload, agent, status, created_at]
+      properties:
+        id:
+          type: string
+        payload:
+          type: string
+        agent:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        created_at:
+          type: string
+        completed_at:
+          type: ["string", "null"]
+        error_msg:
+          type: ["string", "null"]
+        result:
+          type: ["string", "null"]
+
+    TaskInput:
+      type: object
+      required: [payload]
+      properties:
+        payload:
+          type: string
+          minLength: 1
+        agent:
+          type: string
+
+    TaskSummary:
+      type: object
+      required: [total, pending, running, completed, failed]
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        running:
+          type: integer
+        completed:
+          type: integer
+        failed:
+          type: integer
