@@ -2,12 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+const maxSSEClients = 100
 
 type LogEntry struct {
 	Level     string `json:"level"`
@@ -21,9 +25,10 @@ type client struct {
 }
 
 type LogBroker struct {
-	mu      sync.Mutex
-	clients map[*client]struct{}
-	emit_ch chan LogEntry
+	mu          sync.Mutex
+	clients     map[*client]struct{}
+	emit_ch     chan LogEntry
+	clientCount int32
 }
 
 func newLogBroker() *LogBroker {
@@ -53,18 +58,23 @@ func (b *LogBroker) emit(entry LogEntry) {
 	}
 }
 
-func (b *LogBroker) subscribe() *client {
+func (b *LogBroker) subscribe() (*client, error) {
+	if atomic.AddInt32(&b.clientCount, 1) > maxSSEClients {
+		atomic.AddInt32(&b.clientCount, -1)
+		return nil, errors.New("too many SSE clients")
+	}
 	c := &client{ch: make(chan LogEntry, 64)}
 	b.mu.Lock()
 	b.clients[c] = struct{}{}
 	b.mu.Unlock()
-	return c
+	return c, nil
 }
 
 func (b *LogBroker) unsubscribe(c *client) {
 	b.mu.Lock()
 	delete(b.clients, c)
 	b.mu.Unlock()
+	atomic.AddInt32(&b.clientCount, -1)
 }
 
 func serveSSE(w http.ResponseWriter, r *http.Request, broker *LogBroker) {
@@ -74,13 +84,17 @@ func serveSSE(w http.ResponseWriter, r *http.Request, broker *LogBroker) {
 		return
 	}
 
+	c, err := broker.subscribe()
+	if err != nil {
+		http.Error(w, "Too many active streams", http.StatusServiceUnavailable)
+		return
+	}
+	defer broker.unsubscribe(c)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-
-	c := broker.subscribe()
-	defer broker.unsubscribe(c)
 
 	connectMsg := LogEntry{
 		Level:     "system",
