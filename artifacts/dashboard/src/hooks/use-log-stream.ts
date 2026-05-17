@@ -16,7 +16,9 @@ export function useLogStream(maxLogs = 1000) {
   useEffect(() => {
     if (isPaused) return;
 
-    const eventSource = new EventSource("/api/logs/stream");
+    const eventSource = new EventSource("/api/logs/stream", {
+      withCredentials: true,
+    });
 
     eventSource.onmessage = (event) => {
       try {
