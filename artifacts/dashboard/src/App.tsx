@@ -7,47 +7,16 @@ import Dashboard from "@/pages/Dashboard";
 import Tasks from "@/pages/Tasks";
 import Logs from "@/pages/Logs";
 import NotFound from "@/pages/not-found";
-import LoginPage from "@/pages/Login";
-import { AuthProvider, useAuth } from "@/context/auth";
 
-function makeQueryClient(onUnauthorized: () => void) {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: (failureCount, error) => {
-          if (
-            error &&
-            typeof error === "object" &&
-            "status" in error &&
-            (error as { status: number }).status === 401
-          ) {
-            onUnauthorized();
-            return false;
-          }
-          return failureCount < 2;
-        },
-      },
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
     },
-  });
-}
+  },
+});
 
-function AuthGate() {
-  const { status, markUnauthenticated } = useAuth();
-
-  const queryClient = makeQueryClient(markUnauthenticated);
-
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center">
-        <span className="text-xs font-mono text-gray-500">Connecting...</span>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    return <LoginPage />;
-  }
-
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -64,14 +33,6 @@ function AuthGate() {
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
-  );
-}
-
-function App() {
-  return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
   );
 }
 
