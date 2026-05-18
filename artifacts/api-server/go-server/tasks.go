@@ -20,6 +20,7 @@ const (
 const (
         maxTaskStoreSize     = 500
         maxConcurrentWorkers = 50
+        maxTaskPayloadBytes  = 32 * 1024
 )
 
 var agents = []string{"Claude", "DeepSeek", "Hermes"}
@@ -70,6 +71,10 @@ func (s *TaskStore) nextID() string {
 }
 
 func (s *TaskStore) create(input TaskInput) (Task, error) {
+        if len(input.Payload) > maxTaskPayloadBytes {
+                return Task{}, fmt.Errorf("payload too large: maximum %d bytes allowed", maxTaskPayloadBytes)
+        }
+
         s.mu.Lock()
 
         if len(s.tasks) >= maxTaskStoreSize {
