@@ -70,6 +70,34 @@ func (s *TaskStore) nextID() string {
         return fmt.Sprintf("task-%06d-%04x", s.idCtr, rand.Intn(0xffff))
 }
 
+// evictCompleted removes completed and failed tasks to free capacity.
+// Must be called with s.mu held for writing.
+// It evicts the oldest finished tasks up to the number needed to bring the
+// store below maxTaskStoreSize.
+func (s *TaskStore) evictCompleted(need int) {
+        type entry struct {
+                id          string
+                completedAt string
+        }
+        var finished []entry
+        for id, t := range s.tasks {
+                if t.Status == StatusCompleted || t.Status == StatusFailed {
+                        ca := ""
+                        if t.CompletedAt != nil {
+                                ca = *t.CompletedAt
+                        }
+                        finished = append(finished, entry{id, ca})
+                }
+        }
+        // Sort oldest-first so we evict the least-recently-completed tasks.
+        sort.Slice(finished, func(i, j int) bool {
+                return finished[i].completedAt < finished[j].completedAt
+        })
+        for i := 0; i < need && i < len(finished); i++ {
+                delete(s.tasks, finished[i].id)
+        }
+}
+
 func (s *TaskStore) create(input TaskInput) (Task, error) {
         if len(input.Payload) > maxTaskPayloadBytes {
                 return Task{}, fmt.Errorf("payload too large: maximum %d bytes allowed", maxTaskPayloadBytes)
@@ -78,8 +106,15 @@ func (s *TaskStore) create(input TaskInput) (Task, error) {
         s.mu.Lock()
 
         if len(s.tasks) >= maxTaskStoreSize {
-                s.mu.Unlock()
-                return Task{}, fmt.Errorf("task store full: maximum %d tasks reached", maxTaskStoreSize)
+                // Attempt to reclaim capacity by evicting finished tasks before
+                // giving up.  This prevents completed work from permanently
+                // exhausting the global task store.
+                need := len(s.tasks) - maxTaskStoreSize + 1
+                s.evictCompleted(need)
+                if len(s.tasks) >= maxTaskStoreSize {
+                        s.mu.Unlock()
+                        return Task{}, fmt.Errorf("task store full: maximum %d tasks reached", maxTaskStoreSize)
+                }
         }
 
         agent := input.Agent
