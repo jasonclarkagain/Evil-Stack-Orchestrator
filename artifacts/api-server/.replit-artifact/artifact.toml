@@ -15,7 +15,7 @@ run = "cd /home/runner/workspace/artifacts/api-server/go-server && go run ."
 [services.production]
 
 [services.production.build]
-args = ["sh", "-c", "cd /home/runner/workspace/artifacts/api-server/go-server && go build -o /home/runner/workspace/artifacts/api-server/dist/server ."]
+args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
 
 [services.production.run]
 args = ["/home/runner/workspace/artifacts/api-server/dist/server"]
