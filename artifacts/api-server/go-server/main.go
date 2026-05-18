@@ -91,6 +91,10 @@ const (
         // Login rate limiting: 10 attempts per 15-minute window per IP.
         loginRateLimit  = 10
         loginRateWindow = 15 * time.Minute
+        // SSE connect rate limiting: 10 new stream opens per minute per token.
+        // Prevents rapid-reconnect loops from maintaining full-capacity lockout.
+        sseConnectRateLimit  = 10
+        sseConnectRateWindow = time.Minute
 )
 
 type rateLimiter struct {
@@ -237,12 +241,14 @@ func main() {
         logBroker := newLogBroker()
         taskLimiter := newRateLimiter(taskRateLimit, taskRateWindow)
         loginLimiter := newRateLimiter(loginRateLimit, loginRateWindow)
+        sseConnectLimiter := newRateLimiter(sseConnectRateLimit, sseConnectRateWindow)
 
         go taskStore.processLoop(logBroker)
         go logBroker.run()
         go seedInitialTasks(taskStore)
         go taskLimiter.pruneLoop()
         go loginLimiter.pruneLoop()
+        go sseConnectLimiter.pruneLoop()
 
         mux := http.NewServeMux()
 
@@ -358,7 +364,12 @@ func main() {
         }))
 
         mux.HandleFunc("GET /api/logs/stream", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
-                serveSSE(w, r, logBroker)
+                cookie, _ := r.Cookie(sessionCookieName)
+                if !sseConnectLimiter.allow(cookie.Value) {
+                        writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many stream connections"})
+                        return
+                }
+                serveSSE(w, r, logBroker, sessions, cookie.Value)
         }))
 
         handler := corsMiddleware(trustedOrigins())(mux)
