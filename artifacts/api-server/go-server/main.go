@@ -227,7 +227,7 @@ func main() {
                 port = "8080"
         }
 
-        apiKey := os.Getenv("API_KEY")
+        apiKey := strings.TrimSpace(os.Getenv("API_KEY"))
         if apiKey == "" {
                 log.Fatal("API_KEY environment variable must be set")
         }
