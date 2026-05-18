@@ -38,7 +38,7 @@ Assumptions for future scans:
 
 ### Spoofing
 
-The production API now has a shared operator authentication layer: `POST /api/auth/login` exchanges the operator password for an opaque server-side session cookie, and operational endpoints validate that cookie. The system must keep that session boundary intact by issuing unpredictable tokens, expiring and revoking them server-side, and rejecting unauthenticated access to telemetry, task control, and log streaming.
+The production API now has a shared operator authentication layer: `POST /api/auth/login` exchanges the operator password for an opaque server-side session cookie, and operational endpoints validate that cookie. The system must keep that session boundary intact by issuing unpredictable tokens, expiring and revoking them server-side, and rejecting unauthenticated access to telemetry, task control, and log streaming. Long-lived authenticated channels such as `/api/logs/stream` must not continue delivering data after the backing session has been revoked or has expired.
 
 ### Tampering
 
@@ -46,11 +46,11 @@ Task creation and deletion directly alter shared engine state. The system must c
 
 ### Information Disclosure
 
-The dashboard exposes live logs, task payloads, task results, and engine telemetry. Those responses must remain limited to authenticated sessions, and cross-origin requests must stay deny-by-default unless a deliberate allowlist is configured. Session cookies must remain `HttpOnly`, `Secure`, and resistant to ambient cross-site use.
+The dashboard exposes live logs, task payloads, task results, and engine telemetry. Those responses must remain limited to authenticated sessions, and cross-origin requests must stay deny-by-default unless a deliberate allowlist is configured. Session cookies must remain `HttpOnly`, `Secure`, and resistant to ambient cross-site use. Streaming endpoints must enforce session validity for the entire lifetime of the stream, not only when the connection is opened.
 
 ### Denial of Service
 
-Availability is the primary remaining risk area. Public and authenticated endpoints accept network connections, JSON request bodies, polling traffic, and streaming subscriptions. The production Go server must enforce connection/read/write/idle timeouts, bound headers and request bodies, limit queue growth and resident task bytes, and cap concurrent streaming clients so one actor cannot exhaust goroutines, memory, sockets, or response bandwidth.
+Availability is the primary remaining risk area. Public and authenticated endpoints accept network connections, JSON request bodies, polling traffic, and streaming subscriptions. The production Go server must enforce connection/read/write/idle timeouts, bound headers and request bodies, limit queue growth and resident task bytes, and cap concurrent streaming clients so one actor cannot exhaust goroutines, memory, sockets, or response bandwidth. Those bounds must also recover automatically: completed tasks should not consume finite queue capacity forever, and long-lived stream slots should not be monopolizable indefinitely by one client or session.
 
 ### Elevation of Privilege
 
